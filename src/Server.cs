@@ -1,13 +1,67 @@
 using System.Net;
-using System.Net.Sockets;
 using System.Text;
 
-// You can use print statements as follows for debugging, they'll be visible when running tests.
-Console.WriteLine("Logs from your program will appear here!");
+internal class Program
+{
+    private static bool runServer = true;
+    public static string pageData =
+            "<!DOCTYPE>" +
+            "<html>" +
+            "  <head>" +
+            "    <title>HttpListener Example</title>" +
+            "  </head>" +
+            "  <body>" +
+            "    <p>Page Views: {0}</p>" +
+            "    <form method=\"post\" action=\"shutdown\">" +
+            "      <input type=\"submit\" value=\"Shutdown\" {1}>" +
+            "    </form>" +
+            "<script>console.log('Muzaffar')</script>" +
+            "  </body>" +
+            "</html>";
+    private static async Task Main(string[] args)
+    {
+        Console.WriteLine("App started");
 
-var server = new TcpListener(IPAddress.Any, 4221);
-// Starting server
-server.Start();
-var socket = server.AcceptSocket();
+        // create http listener
+        HttpListener listener = new HttpListener();
 
-socket.Send(Encoding.UTF8.GetBytes("HTTP/1.1 200 OK\r\n\r\n"));
+        // configure listener
+        listener.Prefixes.Add("http://localhost:8080/");
+        listener.Start();
+
+        await HandleConnections();
+
+
+        listener.Close();
+
+
+        async Task HandleConnections()
+        {
+            while (runServer)
+            {
+                var context = await listener.GetContextAsync();
+                var outputStream = context.Response.OutputStream;
+
+                var request = context.Request;
+
+                var response = context.Response;
+
+                Console.WriteLine(request.Url.AbsolutePath + (request.Url.AbsolutePath.Length == "/index.html".Length));
+                if (request.HttpMethod == HttpMethod.Get.Method && string.Equals(request.Url.AbsolutePath, "/index.html", StringComparison.OrdinalIgnoreCase))
+                {
+                    response.StatusCode = 200;
+                    response.ContentType = "text/html";
+                    var bytes = Encoding.UTF8.GetBytes(string.Format(pageData, 0, ""));
+                }
+                else
+                {
+                    response.StatusCode = 404;
+                    response.ContentType = "text/html";
+                    var bytes = Encoding.UTF8.GetBytes("<h1>Not found</h1>");
+                }
+
+                response.Close();
+            }
+        }
+    }
+}
