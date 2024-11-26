@@ -58,6 +58,8 @@ internal class Program
             {
                 await WriteContentToNetworkStream(clientStream, NOT_FOUND_404);
             }
+
+            client.Close();
         }
 
         server.Stop();
