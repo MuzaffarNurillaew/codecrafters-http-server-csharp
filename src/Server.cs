@@ -38,39 +38,82 @@ internal class Program
             var content = await ReadStringContentFromNetworkStream(clientStream);
             Console.WriteLine("\n\n" + content + "\n\n");
             var requestTarget = GetRequestTarget(content);
+            string response = GetResponse(404, [], "");
 
             if (requestTarget == "/")
             {
-                await WriteContentToNetworkStream(clientStream,
-                    $"{SUCCESS_200}{LINE_BREAK}" +
-                    $"Content-Type: text/plain{LINE_BREAK}");
+                response = GetResponse(
+                    statusCode: 200,
+                    headers: new Dictionary<string, string> { ["Content-Type"] = "text/plain" },
+                    body: "");
             }
             else if (requestTarget.StartsWith("/echo/"))
             {
                 string echoContent = Uri.UnescapeDataString(requestTarget.Substring("/echo/".Length));
 
-                await WriteContentToNetworkStream(clientStream,
-                    $"{SUCCESS_200}{LINE_BREAK}" +
-                    $"Content-Type: text/plain{LINE_BREAK}" +
-                    $"Content-Length: {echoContent.Length}{SECTION_BREAK}" +
-                    $"{echoContent}");
+                response = GetResponse(
+                    statusCode: 200,
+                    headers: new Dictionary<string, string> { ["Content-Type"] = "text/plain", ["Content-Length"] = echoContent.Length.ToString() },
+                    body: echoContent);
+            }
+            else if (requestTarget.StartsWith("/files/"))
+            {
+                string fileName = Uri.UnescapeDataString(requestTarget.Substring("/files/".Length));
+                string fileContent = "";
+                string filePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..\\..\\..\\src\\wwwroot\\", fileName);
+                if (File.Exists(filePath))
+                {
+                    fileContent = File.ReadAllText(filePath);
+                    response = GetResponse(
+                        statusCode: 200,
+                        headers: new Dictionary<string, string> { ["Content-Type"] = "application/octet-stream", ["Content-Length"] = fileContent.Length.ToString() },
+                        body: fileContent);
+                }
+                else
+                {
+                    response = GetResponse(
+                        statusCode: 404,
+                        headers: [],
+                        body: fileContent);
+                }
+
             }
             else if (requestTarget == "/user-agent")
             {
                 string userAgent = GetHeader(content, "User-Agent");
-                await WriteContentToNetworkStream(clientStream,
-                    $"{SUCCESS_200}{LINE_BREAK}" +
-                    $"Content-Type: text/plain{LINE_BREAK}" +
-                    $"Content-Length: {userAgent.Length}{SECTION_BREAK}" +
-                    $"{userAgent}");
-            }
-            else
-            {
-                await WriteContentToNetworkStream(clientStream, NOT_FOUND_404 + LINE_BREAK);
+                response = GetResponse(
+                    statusCode: 200,
+                    headers: new Dictionary<string, string> { ["Content-Type"] = "text/plain", ["Content-Length"] = userAgent.Length.ToString() },
+                    body: userAgent);
             }
 
+            await WriteContentToNetworkStream(clientStream, response);
             clientStream.Close();
         }
+    }
+
+    private static string GetResponse(int statusCode, Dictionary<string, string> headers, string body)
+    {
+        var sb = new StringBuilder();
+        sb.Append($"HTTP/1.1 {statusCode}{LINE_BREAK}");
+
+        string headersText = GenerateHeaderString(headers);
+        sb.Append(headersText + LINE_BREAK);
+
+        sb.Append(body);
+
+        return sb.ToString();
+    }
+
+    private static string GenerateHeaderString(Dictionary<string, string> headers)
+    {
+        var sb = new StringBuilder();
+        foreach (var header in headers)
+        {
+            sb.Append($"{header.Key}: {header.Value}{LINE_BREAK}");
+        }
+
+        return sb.ToString();
     }
 
     private static string GetHeader(string content, string headerName)
