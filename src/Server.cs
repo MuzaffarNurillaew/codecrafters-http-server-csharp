@@ -1,67 +1,65 @@
 using System.Net;
+using System.Net.Sockets;
 using System.Text;
 
 internal class Program
 {
-    private static bool runServer = true;
-    public static string pageData =
-            "<!DOCTYPE>" +
-            "<html>" +
-            "  <head>" +
-            "    <title>HttpListener Example</title>" +
-            "  </head>" +
-            "  <body>" +
-            "    <p>Page Views: {0}</p>" +
-            "    <form method=\"post\" action=\"shutdown\">" +
-            "      <input type=\"submit\" value=\"Shutdown\" {1}>" +
-            "    </form>" +
-            "<script>console.log('Muzaffar')</script>" +
-            "  </body>" +
-            "</html>";
+    const string SUCCESS_200 = "HTTP/1.1 200 OK\r\n\r\n";
+    const string NOT_FOUND_404 = "HTTP/1.1 404 Not Found\r\n\r\n";
+
     private static async Task Main(string[] args)
     {
-        Console.WriteLine("App started");
+        Console.WriteLine("App is started...");
 
-        // create http listener
-        HttpListener listener = new HttpListener();
+        bool runServer = true;
+        var server = new TcpListener(IPAddress.Any, 8080);
+        server.Start();
 
-        // configure listener
-        listener.Prefixes.Add("http://localhost:8080/");
-        listener.Start();
-
-        await HandleConnections();
-
-
-        listener.Close();
-
-
-        async Task HandleConnections()
+        while (runServer)
         {
-            while (runServer)
+            var client = await server.AcceptTcpClientAsync();
+            Console.WriteLine("LINE 16: Client connected...");
+
+            using NetworkStream clientStream = client.GetStream();
+            var content = await ReadStringContentFromNetworkStream(clientStream);
+            var requestTarget = GetRequestTarget(content);
+
+            if (requestTarget == "/index.html")
             {
-                var context = await listener.GetContextAsync();
-                var outputStream = context.Response.OutputStream;
-
-                var request = context.Request;
-
-                var response = context.Response;
-
-                Console.WriteLine(request.Url.AbsolutePath + (request.Url.AbsolutePath.Length == "/index.html".Length));
-                if (request.HttpMethod == HttpMethod.Get.Method && string.Equals(request.Url.AbsolutePath, "/index.html", StringComparison.OrdinalIgnoreCase))
-                {
-                    response.StatusCode = 200;
-                    response.ContentType = "text/html";
-                    var bytes = Encoding.UTF8.GetBytes(string.Format(pageData, 0, ""));
-                }
-                else
-                {
-                    response.StatusCode = 404;
-                    response.ContentType = "text/html";
-                    var bytes = Encoding.UTF8.GetBytes("<h1>Not found</h1>");
-                }
-
-                response.Close();
+                await WriteContentToNetworkStream(clientStream, SUCCESS_200);
+            }
+            else
+            {
+                await WriteContentToNetworkStream(clientStream, NOT_FOUND_404);
             }
         }
+
+        server.Stop();
+        Console.WriteLine("App is stopped...");
+    }
+
+    static Task WriteContentToNetworkStream(NetworkStream stream, string content)
+    {
+        return stream.WriteAsync(Encoding.UTF8.GetBytes(content), 0, content.Length);
+    }
+
+    static async Task<string> ReadStringContentFromNetworkStream(NetworkStream stream)
+    {
+        var buffer = new byte[1024];
+        await stream.ReadAsync(buffer);
+
+        return Encoding.UTF8.GetString(buffer);
+    }
+
+    static string[] SplitHttpRequest(string request, string splitter = "\r\n")
+    {
+        return request.Split(splitter);
+    }
+
+    static string GetRequestTarget(string requestString)
+    {
+        var requestLine = SplitHttpRequest(requestString)[0];
+
+        return requestLine.Trim().Split(" ")[1];
     }
 }
