@@ -20,50 +20,76 @@ internal class Program
         while (runServer)
         {
             var client = await server.AcceptTcpClientAsync();
+
             Console.WriteLine("LINE 16: Client connected...");
 
-            using NetworkStream clientStream = client.GetStream();
+            _ = Task.Run(async () => await HandleClientAsync(client));
+        }
+
+        server.Stop();
+        Console.WriteLine("App is stopped...");
+    }
+
+    private static async Task HandleClientAsync(TcpClient client)
+    {
+        using (client)
+        {
+            NetworkStream clientStream = client.GetStream();
             var content = await ReadStringContentFromNetworkStream(clientStream);
+            Console.WriteLine("\n\n" + content + "\n\n");
             var requestTarget = GetRequestTarget(content);
 
             if (requestTarget == "/")
             {
-                // Status line
-                await WriteContentToNetworkStream(clientStream, SUCCESS_200);
-                await WriteContentToNetworkStream(clientStream, LINE_BREAK);
-
-
-                // Headers
-                await WriteContentToNetworkStream(clientStream, "Content-Type: text/plain");
-                await WriteContentToNetworkStream(clientStream, LINE_BREAK);
+                await WriteContentToNetworkStream(clientStream,
+                    $"{SUCCESS_200}{LINE_BREAK}" +
+                    $"Content-Type: text/plain{LINE_BREAK}");
             }
             else if (requestTarget.StartsWith("/echo/"))
             {
                 string echoContent = Uri.UnescapeDataString(requestTarget.Substring("/echo/".Length));
 
-                // Status line
-                await WriteContentToNetworkStream(clientStream, SUCCESS_200);
-                await WriteContentToNetworkStream(clientStream, LINE_BREAK);
-
-                // Headers
-                await WriteContentToNetworkStream(clientStream, "Content-Type: text/plain");
-                await WriteContentToNetworkStream(clientStream, LINE_BREAK);
-                await WriteContentToNetworkStream(clientStream, $"Content-Length: {echoContent.Length}");
-                await WriteContentToNetworkStream(clientStream, SECTION_BREAK);
-
-                // Response body
-                await WriteContentToNetworkStream(clientStream, echoContent);
+                await WriteContentToNetworkStream(clientStream,
+                    $"{SUCCESS_200}{LINE_BREAK}" +
+                    $"Content-Type: text/plain{LINE_BREAK}" +
+                    $"Content-Length: {echoContent.Length}{SECTION_BREAK}" +
+                    $"{echoContent}");
+            }
+            else if (requestTarget == "/user-agent")
+            {
+                string userAgent = GetHeader(content, "User-Agent");
+                await WriteContentToNetworkStream(clientStream,
+                    $"{SUCCESS_200}{LINE_BREAK}" +
+                    $"Content-Type: text/plain{LINE_BREAK}" +
+                    $"Content-Length: {userAgent.Length}{SECTION_BREAK}" +
+                    $"{userAgent}");
             }
             else
             {
-                await WriteContentToNetworkStream(clientStream, NOT_FOUND_404);
+                await WriteContentToNetworkStream(clientStream, NOT_FOUND_404 + LINE_BREAK);
             }
 
-            client.Close();
+            clientStream.Close();
+        }
+    }
+
+    private static string GetHeader(string content, string headerName)
+    {
+        var splittedContent = SplitHttpRequest(content);
+        var result = splittedContent.FirstOrDefault(c => c.StartsWith(headerName)) ?? string.Empty;
+
+        if (result == string.Empty)
+        {
+            return result;
         }
 
-        server.Stop();
-        Console.WriteLine("App is stopped...");
+        return result.Substring(headerName.Length + 2);
+    }
+
+    private static async Task<string> GetHeaderAsync(NetworkStream stream, string headerName)
+    {
+        var content = await ReadStringContentFromNetworkStream(stream);
+        return GetHeader(content, headerName);
     }
 
     static Task WriteContentToNetworkStream(NetworkStream stream, string content)
@@ -74,7 +100,7 @@ internal class Program
     static async Task<string> ReadStringContentFromNetworkStream(NetworkStream stream)
     {
         var buffer = new byte[1024];
-        await stream.ReadAsync(buffer);
+        await stream.ReadAsync(buffer, 0, buffer.Length);
 
         return Encoding.UTF8.GetString(buffer);
     }
@@ -86,18 +112,14 @@ internal class Program
 
     static string GetRequestTarget(string requestString)
     {
-        try
-        {
-            var requestLine = SplitHttpRequest(requestString)[0];
+        var requestLine = SplitHttpRequest(requestString)[0];
 
-            var result = requestLine.Split(" ")[1];
-
-            return result;
-        }
-        catch (IndexOutOfRangeException)
+        var requestParts = requestLine.Split(" ");
+        if (requestParts.Length < 2)
         {
-            Console.WriteLine($"ERR: {nameof(IndexOutOfRangeException)}, request string: {requestString}");
             return string.Empty;
         }
+
+        return requestParts[1];
     }
 }
