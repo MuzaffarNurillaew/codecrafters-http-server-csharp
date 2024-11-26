@@ -4,8 +4,10 @@ using System.Text;
 
 internal class Program
 {
-    const string SUCCESS_200 = "HTTP/1.1 200 OK\r\n\r\n";
-    const string NOT_FOUND_404 = "HTTP/1.1 404 Not Found\r\n\r\n";
+    const string SUCCESS_200 = "HTTP/1.1 200 OK";
+    const string NOT_FOUND_404 = "HTTP/1.1 404 Not Found";
+    const string SECTION_BREAK = "\r\n\r\n";
+    const string LINE_BREAK = "\r\n";
 
     private static async Task Main(string[] args)
     {
@@ -24,9 +26,33 @@ internal class Program
             var content = await ReadStringContentFromNetworkStream(clientStream);
             var requestTarget = GetRequestTarget(content);
 
-            if (requestTarget == "/index.html")
+            if (requestTarget == "/")
             {
+                // Status line
                 await WriteContentToNetworkStream(clientStream, SUCCESS_200);
+                await WriteContentToNetworkStream(clientStream, LINE_BREAK);
+
+
+                // Headers
+                await WriteContentToNetworkStream(clientStream, "Content-Type: text/plain");
+                await WriteContentToNetworkStream(clientStream, LINE_BREAK);
+            }
+            else if (requestTarget.StartsWith("/echo/"))
+            {
+                string echoContent = Uri.UnescapeDataString(requestTarget.Substring("/echo/".Length));
+
+                // Status line
+                await WriteContentToNetworkStream(clientStream, SUCCESS_200);
+                await WriteContentToNetworkStream(clientStream, LINE_BREAK);
+
+                // Headers
+                await WriteContentToNetworkStream(clientStream, "Content-Type: text/plain");
+                await WriteContentToNetworkStream(clientStream, LINE_BREAK);
+                await WriteContentToNetworkStream(clientStream, $"Content-Length: {echoContent.Length}");
+                await WriteContentToNetworkStream(clientStream, SECTION_BREAK);
+
+                // Response body
+                await WriteContentToNetworkStream(clientStream, echoContent);
             }
             else
             {
@@ -58,8 +84,18 @@ internal class Program
 
     static string GetRequestTarget(string requestString)
     {
-        var requestLine = SplitHttpRequest(requestString)[0];
+        try
+        {
+            var requestLine = SplitHttpRequest(requestString)[0];
 
-        return requestLine.Trim().Split(" ")[1];
+            var result = requestLine.Split(" ")[1];
+
+            return result;
+        }
+        catch (IndexOutOfRangeException)
+        {
+            Console.WriteLine($"ERR: {nameof(IndexOutOfRangeException)}, request string: {requestString}");
+            return string.Empty;
+        }
     }
 }
